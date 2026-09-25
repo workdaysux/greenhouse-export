@@ -1,0 +1,43 @@
+GREENHOUSE EXPORT TOOL — Quick Start
+====================================
+
+TO USE THIS IN CLAUDE CODE:
+
+1. Ask Claude: "Run the greenhouse export"
+   Or: "! bash greenhouse_export.sh"
+
+2. Claude will guide you through a setup wizard (first time only):
+   - Paste your v3 Client ID
+   - Paste your v3 Client Secret
+   - Paste your User ID
+
+3. Credentials are saved — next run is instant!
+
+4. The export creates a folder with:
+   - export_candidates.csv (all candidate + application data)
+   - resumes/ folder (organized by Department → Role)
+
+Done! All data ready to use in your new ATS.
+
+═══════════════════════════════════════════════════════════════
+
+HOW TO GET CREDENTIALS:
+
+Greenhouse Settings → API Credentials:
+  • Copy the v3 OAuth2 CLIENT ID and SECRET
+  • Copy the v1 API KEY
+
+Greenhouse Settings → Account:
+  • Find your USER ID (top right dropdown)
+
+═══════════════════════════════════════════════════════════════
+
+QUESTIONS?
+
+The script handles:
+✓ All candidates, applications, jobs
+✓ Downloading resumes (organized by dept/role)
+✓ Creating CSV with full candidate history
+✓ Large datasets (1000+ records)
+
+Need help? Contact your IT person with the credential info above.
