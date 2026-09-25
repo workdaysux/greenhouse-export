@@ -62,7 +62,6 @@ CSV columns: `candidate_id`, `first_name`, `last_name`, `email`, `phone`, `job_i
 - Fully automated (no UI, no external services)
 - Handles large datasets (1000+ candidates)
 - Resumes pre-signed URLs expire in ~7 days
-- Rate-limited to 50 req/10 sec
 
 ## License
 
