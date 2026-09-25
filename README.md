@@ -8,118 +8,177 @@ One-command export of all candidates, applications, and resumes from a Greenhous
 bash greenhouse_export.sh
 ```
 
-The script guides you through setup on first run (saves credentials for next time), then:
-1. Fetches all candidate + application + job data
-2. **Parallel downloads 8 resumes at a time** (10x faster than sequential)
-3. Exports:
-   - **export_candidates.csv** — all candidate + application data with resume status
-   - **resumes/** — organized by department → role
-   - **download_failures.csv** — any failed downloads for retry
+**What happens:**
+1. On first run: Interactive wizard asks for 3 Greenhouse credentials (one time only)
+2. Subsequent runs: Uses saved credentials, no prompts needed
+3. Script automatically:
+   - Fetches all candidate + application + job data from Greenhouse
+   - Downloads resumes in parallel (8 at a time) from S3
+   - Organizes by department → role
+   - Generates CSV with resume status
+
+**Time to completion:** 1-2 hours for 1000+ candidates (with parallel downloads)
 
 ## What's Included
 
-- `greenhouse_export.sh` — Interactive setup wizard + orchestration
-- `greenhouse_export.py` — Core export logic (candidates, applications, jobs, resumes)
-- `.env.template` — Credential template
+- `greenhouse_export.sh` — Interactive setup wizard (one-time) + main script
+- `greenhouse_export.py` — Core export logic
+- `.env.template` — Where credentials get saved (auto-created)
 - `QUICK_START.txt` — Quick reference
-- `GREENHOUSE_EXPORT_README.md` — Detailed documentation
+- `GREENHOUSE_EXPORT_README.md` — Original detailed docs
 
 ## Requirements
 
 - Python 3.7+
 - Bash
-- Greenhouse v3 OAuth2 API credentials
+- Greenhouse v3 OAuth2 API credentials (you'll enter these once)
 
 ## How It Works
 
-1. **First run:** Interactive wizard prompts for 3 credentials (saves to `.env`)
-2. **Subsequent runs:** Reads saved credentials, no prompts
-3. **Export:** Fetches all candidates/applications/jobs via v3 API, downloads resumes, creates CSV
+**First Run (Setup):**
+```
+bash greenhouse_export.sh
+→ Wizard prompts for 3 credentials
+→ Credentials saved to .env (never ask again)
+→ Export starts
+```
+
+**Subsequent Runs:**
+```
+bash greenhouse_export.sh
+→ Loads saved credentials from .env
+→ Export starts immediately (no prompts)
+```
+
+**Export Process:**
+1. Fetches all candidates from Greenhouse API
+2. Fetches all applications and jobs
+3. **Parallel downloads 8 resumes at a time** (automatic retry on network failures)
+4. Writes CSV with resume status (`pending` → `yes`/`failed`)
+5. If interrupted: run again to resume from checkpoint
 
 ## Credentials Needed
 
-From your Greenhouse account:
-- **v3 CLIENT ID** — Settings → API Credentials → OAuth2 Provider
-- **v3 CLIENT SECRET** — Same location
-- **USER ID** — Your profile or Settings → Users
+Get these from your Greenhouse account (Settings → API Credentials):
 
-## Output
+- **v3 Client ID** — Under "OAuth2 Provider"
+- **v3 Client Secret** — Under "OAuth2 Provider"
+- **User ID** — Click your name/avatar → Profile, or Settings → Users (look for your numeric ID)
+
+Takes 2 minutes to find. You'll enter them once, then never again.
+
+## Output Files
 
 ```
-greenhouse_export/
-├── export_candidates.csv          # Master spreadsheet (see columns below)
-├── download_failures.csv          # Failed resumes (if any)
-├── export_progress.log            # Complete log with timestamps
-└── resumes/
+greenhouse_export/                    ← Main output folder
+├── export_candidates.csv             ← Master spreadsheet with all data
+├── download_failures.csv             ← Any failed resumes (if any)
+├── export_progress.log               ← Detailed log with timestamps
+├── export_progress.json              ← Resume checkpoint (internal use)
+└── resumes/                          ← Organized by department → role
     ├── Engineering/
     │   ├── Senior Engineer/
-    │   │   └── 12345_jane_doe_att-456.pdf
+    │   │   ├── 12345_jane_doe_att-456.pdf
+    │   │   └── 12346_john_smith_att-789.pdf
     │   └── Junior Engineer/
-    │       └── 12346_john_smith_att-789.pdf
+    │       └── 12347_alice_johnson_att-123.pdf
     └── Sales/
         └── Account Executive/
-            └── 12347_alice_johnson_att-123.pdf
+            └── 12348_bob_jones_att-234.pdf
 
-greenhouse_export_partial_run/    # In-progress downloads (delete after completion)
+greenhouse_export_partial_run/       ← Temporary folder (delete after done)
+└── resumes/                          ← In-progress downloads while running
 ```
 
-**CSV Columns:**
-- `candidate_id`, `first_name`, `last_name`, `email`, `phone`
-- `job_id`, `job_name`, `department`
-- `application_status`, `stage`, `created_at`, `updated_at`
-- `tags`
-- **`resume_files`** — Expected file path(s) for each resume
-- **`resumes_downloaded`** — Status: `pending` → `yes`/`failed`
+## CSV Columns Explained
 
-**Failure Tracking:**
-- `download_failures.csv` — Lists resumes that failed with error messages
-- Useful for retries or manual investigation
+| Column | What It Is |
+|--------|-----------|
+| `candidate_id`, `first_name`, `last_name`, `email`, `phone` | Candidate contact info |
+| `job_id`, `job_name`, `department` | Role they applied for |
+| `application_status` | `in_process`, `rejected`, `hired` |
+| `stage` | Current stage in pipeline (e.g., "Screening", "Interview") |
+| `created_at`, `updated_at` | Application dates |
+| `tags` | Any tags from Greenhouse |
+| `resume_files` | Where resume will be saved (path to file on disk) |
+| `resumes_downloaded` | Status: `pending` (waiting) → `yes` (success) / `failed` (error) |
 
-## Performance
+## Features
 
-**Parallel Downloads:**
-- 8 concurrent download threads (vs. 1 sequential)
-- ~12 hours (sequential) → ~1-2 hours (parallel) for large pools
-- Automatic retry on network failures
+### Performance
+- **8 parallel workers** download resumes simultaneously (vs. 1 at a time)
+- Reduces 12-hour export to 1-2 hours for large candidate pools
+- Automatic retry on network hiccups
 
-## Crash Recovery & Progress Tracking
-
-**Automatic Checkpointing:**
-- Saves progress to `export_progress.json` after each resume
-- If interrupted (crash, network, manual stop), just run again
+### Crash Recovery
+- If script stops (crash, network, manual interrupt): just run again
 - Automatically skips already-downloaded resumes
+- Checkpoint saved to `export_progress.json` (internal tracking)
 
-**3-Level Progress Display:**
-1. **Per-role completion** — `✓ Engineering → Senior Engineer: 5 resumes`
-2. **Per-department summary** — Shows total per department at end
-3. **Overall progress** — Percentage during processing
+### Progress Tracking (3 levels)
+1. **Per-role** — `✓ Engineering → Senior SWE: 5 resumes`
+2. **Per-department summary** — Shows count per department at end
+3. **Overall %** — Shows progress every 100 applications
+4. **Full log** — `export_progress.log` records everything with timestamps
 
-**Logging:**
-- Console output with timestamps
-- Full log saved to `export_progress.log` for later review
-- Both show same info (console for live monitoring, log for records)
+### Failure Handling
+- If any resume downloads fail: listed in `download_failures.csv` with error reason
+- Can re-run to retry failed ones (successful downloads are skipped)
+- Most failures are temporary (network); retry usually succeeds
 
-## Important Notes
+## Important Details
 
-**File Names:**
-- Each resume includes Greenhouse attachment ID: `12345_jane_doe_att-456789.pdf`
-- Prevents overwrites when same candidate has multiple resumes
+### Resume File Names
+Each file includes a Greenhouse attachment ID: `12345_jane_doe_att-456789.pdf`
 
-**Failure Handling:**
-- Failed downloads are logged in `download_failures.csv`
-- Can re-run to retry failed downloads (checkpoint skips successes)
-- View log in `export_progress.log` for details
+**Why:** If a candidate uploaded multiple resumes, we need unique filenames so they don't overwrite each other. The attachment ID makes them unique.
 
-**Cleanup:**
-- Delete `greenhouse_export_partial_run/` after main export completes
-- It contains in-progress downloads and can be large (221+ resumes)
-- Final resumes are in `greenhouse_export/resumes/`
+### The Temporary "Partial Run" Folder
+While the script is running, resumes download to `greenhouse_export_partial_run/`.
 
-**General:**
-- Fully automated (no UI, no external services)
-- Handles large datasets (1000+ candidates)
-- Resumes pre-signed URLs expire in ~7 days
-- Resumable on crash — keeps checkpoint file
+- **This is normal** — it's the working directory
+- **Delete it after completion** — it can be large (100+ MB for big exports)
+- **Final resumes are in** `greenhouse_export/resumes/` (this is what you keep)
+
+### Why We Download Immediately
+Greenhouse provides temporary download URLs that expire after ~7 days. We download resumes right away and save them as files, so:
+- No expiry for you to worry about
+- Files stay on your computer permanently
+- CSV has actual file paths, not temporary URLs
+
+### Re-running the Script
+- **If it finishes normally:** You can run again; it will skip all already-downloaded resumes
+- **If it crashes halfway:** Run again; it picks up where it left off
+- **To retry failures:** Check `download_failures.csv`, then run again
+
+## Troubleshooting
+
+**"ERROR: Invalid username or token"**
+- Wrong credentials entered
+- Delete `.env` file and run again to re-enter
+
+**Network timeouts during download**
+- Normal for large exports; script retries automatically
+- Check `download_failures.csv` for any that still failed
+- Run again to retry failed ones
+
+**"resumes_downloaded" shows "failed" for some**
+- Network issue during that download
+- Check `download_failures.csv` for error details
+- Run again to retry
+
+**Partial run folder is huge**
+- Normal; it contains all resumes while downloading
+- Safe to delete once main export completes
+- (The final resumes in `greenhouse_export/resumes/` are kept)
+
+## General Notes
+
+- **No UI, no external services** — runs locally, talks only to Greenhouse
+- **Fully automated** — no manual steps after entering credentials
+- **One-time setup** — credentials saved, subsequent runs are instant
+- **Large datasets supported** — tested with 1000+ candidates
+- **Resumable** — survives crashes, network interruptions, manual stops
 
 ## License
 
