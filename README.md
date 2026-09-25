@@ -57,11 +57,29 @@ greenhouse_export/
 
 CSV columns: `candidate_id`, `first_name`, `last_name`, `email`, `phone`, `job_id`, `job_name`, `department`, `application_status`, `stage`, `created_at`, `updated_at`, `tags`, `resumes_downloaded`
 
+## Crash Recovery & Progress Tracking
+
+**Automatic Checkpointing:**
+- Saves progress to `export_progress.json` after each resume
+- If interrupted (crash, network, manual stop), just run again
+- Automatically skips already-downloaded resumes
+
+**3-Level Progress Display:**
+1. **Per-role completion** — `✓ Engineering → Senior Engineer: 5 resumes`
+2. **Per-department summary** — Shows total per department at end
+3. **Overall progress** — Percentage during processing (every 100 applications)
+
+**Logging:**
+- Console output with timestamps
+- Full log saved to `export_progress.log` for later review
+- Both show same info (console for live monitoring, log for records)
+
 ## Notes
 
 - Fully automated (no UI, no external services)
 - Handles large datasets (1000+ candidates)
 - Resumes pre-signed URLs expire in ~7 days
+- Resumable on crash — keeps checkpoint file
 
 ## License
 
