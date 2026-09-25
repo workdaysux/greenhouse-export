@@ -241,8 +241,17 @@ def main():
 
     stages_by_id = {s["id"]: s for s in stages}
 
-    # Build CSV rows
-    csv_rows = []
+    # Open CSV for streaming writes (incremental, not all at end)
+    csv_path = OUTPUT_DIR / "export_candidates.csv"
+    csv_file = open(csv_path, "w", newline="", encoding="utf-8")
+    csv_fieldnames = [
+        "candidate_id", "first_name", "last_name", "email", "phone",
+        "job_id", "job_name", "department", "application_status", "stage",
+        "created_at", "updated_at", "tags", "resumes_downloaded"
+    ]
+    csv_writer = csv.DictWriter(csv_file, fieldnames=csv_fieldnames)
+    csv_writer.writeheader()
+
     resume_count = 0
 
     progress.log("Processing applications and downloading resumes...\n")
@@ -297,7 +306,8 @@ def main():
                     if role_total > 0 and role_total % 5 == 0:
                         progress.log(f"  ✓ {dept_name or 'Other'} → {job_name or 'Other'}: {role_total} resumes")
 
-        csv_rows.append({
+        # Write row immediately (incremental, crash-safe)
+        csv_writer.writerow({
             "candidate_id": candidate_id,
             "first_name": first_name,
             "last_name": last_name,
@@ -313,6 +323,7 @@ def main():
             "tags": ", ".join(t["name"] for t in candidate.get("tags", [])),
             "resumes_downloaded": "; ".join(resumes_downloaded),
         })
+        csv_file.flush()
 
     # Final department totals
     progress.log("\n=== DEPARTMENT SUMMARY ===")
@@ -321,18 +332,9 @@ def main():
         for role, role_count in sorted(progress.role_totals[dept].items()):
             progress.log(f"    → {role}: {role_count}")
 
-    progress.log(f"\n✓ Downloaded {resume_count} total resumes\n")
-
-    # Write CSV
-    csv_path = OUTPUT_DIR / "export_candidates.csv"
-    fieldnames = list(csv_rows[0].keys()) if csv_rows else []
-
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(csv_rows)
-
-    progress.log(f"✓ Wrote {len(csv_rows)} rows to {csv_path}")
+    csv_file.close()
+    progress.log(f"\n✓ Downloaded {resume_count} total resumes")
+    progress.log(f"✓ Wrote {len(applications)} rows to {csv_path}")
     progress.log(f"✓ Resumes organized in: {RESUME_DIR}")
     progress.log(f"✓ Progress log: {LOG_FILE}")
     progress.log(f"\n=== EXPORT COMPLETE ===\n")
