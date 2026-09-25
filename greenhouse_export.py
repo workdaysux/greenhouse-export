@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Greenhouse ATS export with crash recovery and multi-level progress tracking.
+Greenhouse ATS export with crash recovery, parallel downloads, and detailed progress.
 Outputs: export_candidates.csv + resumes/ directory.
 Checkpoints to export_progress.json for resumability.
 """
@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Get credentials from env
 V3_CLIENT_ID = os.getenv("GREENHOUSE_V3_CLIENT_ID")
@@ -30,11 +31,17 @@ if not all([V3_CLIENT_ID, V3_CLIENT_SECRET, GREENHOUSE_USER_ID]):
     sys.exit(1)
 
 OUTPUT_DIR = Path.cwd() / "greenhouse_export"
-OUTPUT_DIR.mkdir(exist_ok=True)
+PARTIAL_DIR = Path.cwd() / "greenhouse_export_partial_run"
 RESUME_DIR = OUTPUT_DIR / "resumes"
-RESUME_DIR.mkdir(exist_ok=True)
+PARTIAL_RESUME_DIR = PARTIAL_DIR / "resumes"
 PROGRESS_FILE = OUTPUT_DIR / "export_progress.json"
 LOG_FILE = OUTPUT_DIR / "export_progress.log"
+FAILURES_FILE = OUTPUT_DIR / "download_failures.csv"
+
+OUTPUT_DIR.mkdir(exist_ok=True)
+PARTIAL_DIR.mkdir(exist_ok=True)
+RESUME_DIR.mkdir(exist_ok=True)
+PARTIAL_RESUME_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # Progress Tracking
@@ -44,6 +51,7 @@ class ProgressTracker:
     def __init__(self):
         self.log_file = open(LOG_FILE, "a")
         self.downloaded_resumes = set()
+        self.failed_resumes = []
         self.dept_totals = defaultdict(int)
         self.role_totals = defaultdict(lambda: defaultdict(int))
         self.load_checkpoint()
@@ -58,6 +66,7 @@ class ProgressTracker:
     def save_checkpoint(self):
         checkpoint = {
             "downloaded_resumes": list(self.downloaded_resumes),
+            "failed_resumes": self.failed_resumes,
             "last_updated": datetime.now().isoformat(),
         }
         with open(PROGRESS_FILE, "w") as f:
@@ -69,17 +78,23 @@ class ProgressTracker:
                 with open(PROGRESS_FILE, "r") as f:
                     checkpoint = json.load(f)
                     self.downloaded_resumes = set(checkpoint.get("downloaded_resumes", []))
-                    self.log(f"✓ Resuming: {len(self.downloaded_resumes)} resumes already downloaded")
+                    self.failed_resumes = checkpoint.get("failed_resumes", [])
+                    self.log(f"✓ Resuming: {len(self.downloaded_resumes)} resumes downloaded, {len(self.failed_resumes)} failures")
             except Exception as e:
                 self.log(f"⚠ Could not load checkpoint: {e}")
 
-    def mark_downloaded(self, candidate_id, resume_filename):
-        key = f"{candidate_id}_{resume_filename}"
+    def mark_downloaded(self, candidate_id, attachment_id):
+        key = f"{candidate_id}_{attachment_id}"
         self.downloaded_resumes.add(key)
         self.save_checkpoint()
 
-    def was_downloaded(self, candidate_id, resume_filename):
-        key = f"{candidate_id}_{resume_filename}"
+    def mark_failed(self, candidate_id, attachment_id, error):
+        key = f"{candidate_id}_{attachment_id}"
+        self.failed_resumes.append({"candidate_id": candidate_id, "attachment_id": attachment_id, "error": str(error)})
+        self.save_checkpoint()
+
+    def was_downloaded(self, candidate_id, attachment_id):
+        key = f"{candidate_id}_{attachment_id}"
         return key in self.downloaded_resumes
 
     def add_dept_total(self, dept, count):
@@ -163,24 +178,25 @@ def fetch_v3_paginated(token, endpoint, per_page=500):
     return results
 
 # ============================================================================
-# Download Resumes
+# Download Resumes (Parallel)
 # ============================================================================
 
-def download_resume(candidate_id, candidate_name, role_name, dept_name, resume_url, resume_filename):
-    """Download resume and organize by role/dept."""
+def download_resume(candidate_id, candidate_name, role_name, dept_name, attachment_id, resume_url, resume_filename):
+    """Download single resume. Called by thread pool."""
     # Skip if already downloaded
-    if progress.was_downloaded(candidate_id, resume_filename):
-        return None
+    if progress.was_downloaded(candidate_id, attachment_id):
+        return {"status": "skipped", "candidate_id": candidate_id, "attachment_id": attachment_id}
 
     def safe_name(s):
         return "".join(c if c.isalnum() or c in " -_" else "_" for c in s).strip()
 
-    dept_dir = RESUME_DIR / safe_name(dept_name) if dept_name else RESUME_DIR / "Other"
+    dept_dir = PARTIAL_RESUME_DIR / safe_name(dept_name) if dept_name else PARTIAL_RESUME_DIR / "Other"
     role_dir = dept_dir / safe_name(role_name) if role_name else dept_dir / "Other"
     role_dir.mkdir(parents=True, exist_ok=True)
 
+    # Filename: candidate_id_name_attachment_id.ext
     ext = Path(resume_filename).suffix or ".pdf"
-    local_filename = f"{candidate_id}_{safe_name(candidate_name)}{ext}"
+    local_filename = f"{candidate_id}_{safe_name(candidate_name)}_{attachment_id}{ext}"
     local_path = role_dir / local_filename
 
     try:
@@ -189,22 +205,33 @@ def download_resume(candidate_id, candidate_name, role_name, dept_name, resume_u
             with open(local_path, "wb") as f:
                 f.write(resp.read())
 
-        # Mark as downloaded before returning
-        progress.mark_downloaded(candidate_id, resume_filename)
+        progress.mark_downloaded(candidate_id, attachment_id)
         progress.add_role_total(dept_name or "Other", role_name or "Other", 1)
         progress.add_dept_total(dept_name or "Other", 1)
 
-        return str(local_path)
+        return {
+            "status": "success",
+            "candidate_id": candidate_id,
+            "attachment_id": attachment_id,
+            "filename": local_filename,
+            "dept": dept_name or "Other",
+            "role": role_name or "Other",
+        }
     except Exception as e:
-        progress.log(f"    ✗ Failed to download {resume_filename}: {e}")
-        return None
+        progress.mark_failed(candidate_id, attachment_id, str(e))
+        return {
+            "status": "failed",
+            "candidate_id": candidate_id,
+            "attachment_id": attachment_id,
+            "error": str(e),
+        }
 
 # ============================================================================
 # Main Export
 # ============================================================================
 
 def main():
-    progress.log("\n=== GREENHOUSE EXPORT (with crash recovery) ===\n")
+    progress.log("\n=== GREENHOUSE EXPORT (parallel downloads + crash recovery) ===\n")
 
     token = get_v3_token()
 
@@ -223,11 +250,7 @@ def main():
 
     progress.log("\nFetching attachments...")
     attachments = fetch_v3_paginated(token, "/attachments")
-    progress.log(f"  Total: {len(attachments)} attachments")
-
-    progress.log("\nFetching interview stages...")
-    stages = fetch_v3_paginated(token, "/job_interview_stages")
-    progress.log(f"  Total: {len(stages)} stages\n")
+    progress.log(f"  Total: {len(attachments)} attachments\n")
 
     # Build lookup dicts
     candidates_by_id = {c["id"]: c for c in candidates}
@@ -239,27 +262,24 @@ def main():
             attachments_by_candidate[cid] = []
         attachments_by_candidate[cid].append(att)
 
-    stages_by_id = {s["id"]: s for s in stages}
-
-    # Open CSV for streaming writes (incremental, not all at end)
+    # Open CSV for streaming writes
     csv_path = OUTPUT_DIR / "export_candidates.csv"
     csv_file = open(csv_path, "w", newline="", encoding="utf-8")
     csv_fieldnames = [
         "candidate_id", "first_name", "last_name", "email", "phone",
         "job_id", "job_name", "department", "application_status", "stage",
-        "created_at", "updated_at", "tags", "resumes_downloaded"
+        "created_at", "updated_at", "tags",
+        "resume_files", "resumes_downloaded"
     ]
     csv_writer = csv.DictWriter(csv_file, fieldnames=csv_fieldnames)
     csv_writer.writeheader()
 
-    resume_count = 0
+    # Build list of downloads to queue
+    download_queue = []
+    csv_rows_by_app_id = {}
 
-    progress.log("Processing applications and downloading resumes...\n")
-    for i, app in enumerate(applications, 1):
-        if i % 100 == 0:
-            overall_pct = int((i / len(applications)) * 100)
-            progress.log(f"  [{overall_pct}%] Processed {i}/{len(applications)} applications...")
-
+    progress.log("Preparing download queue...\n")
+    for app in applications:
         candidate_id = app["candidate_id"]
         candidate = candidates_by_id.get(candidate_id, {})
         job = jobs_by_id.get(app["job_id"], {})
@@ -284,29 +304,37 @@ def main():
         created_at = app.get("created_at", "")
         updated_at = app.get("updated_at", "")
 
-        # Download resumes
-        resumes_downloaded = []
+        # Build resume file list and queue downloads
+        resume_files = []
+        expected_resumes = []
         app_attachments = attachments_by_candidate.get(candidate_id, [])
         for att in app_attachments:
             if att.get("type") == "resume" or "resume" in att.get("filename", "").lower():
-                resume_path = download_resume(
-                    candidate_id,
-                    candidate_name,
-                    job_name,
-                    dept_name,
-                    att["url"],
-                    att["filename"],
-                )
-                if resume_path:
-                    resumes_downloaded.append(att["filename"])
-                    resume_count += 1
+                attachment_id = att["id"]
 
-                    # Show role completion
-                    role_total = progress.role_totals.get(dept_name or "Other", {}).get(job_name or "Other", 0)
-                    if role_total > 0 and role_total % 5 == 0:
-                        progress.log(f"  ✓ {dept_name or 'Other'} → {job_name or 'Other'}: {role_total} resumes")
+                # Queue download
+                download_queue.append({
+                    "candidate_id": candidate_id,
+                    "candidate_name": candidate_name,
+                    "role_name": job_name,
+                    "dept_name": dept_name,
+                    "attachment_id": attachment_id,
+                    "resume_url": att["url"],
+                    "resume_filename": att["filename"],
+                })
 
-        # Write row immediately (incremental, crash-safe)
+                def safe_name(s):
+                    return "".join(c if c.isalnum() or c in " -_" else "_" for c in s).strip()
+
+                ext = Path(att["filename"]).suffix or ".pdf"
+                expected_filename = f"{candidate_id}_{safe_name(candidate_name)}_{attachment_id}{ext}"
+                dept_safe = safe_name(dept_name or "Other")
+                role_safe = safe_name(job_name or "Other")
+                expected_path = f"resumes/{dept_safe}/{role_safe}/{expected_filename}"
+                expected_resumes.append(expected_path)
+                resume_files.append(att["filename"])
+
+        # Write row with pending status
         csv_writer.writerow({
             "candidate_id": candidate_id,
             "first_name": first_name,
@@ -321,21 +349,88 @@ def main():
             "created_at": created_at,
             "updated_at": updated_at,
             "tags": ", ".join(t["name"] for t in candidate.get("tags", [])),
-            "resumes_downloaded": "; ".join(resumes_downloaded),
+            "resume_files": "; ".join(expected_resumes) if expected_resumes else "",
+            "resumes_downloaded": "pending" if expected_resumes else "none",
         })
         csv_file.flush()
 
+        # Track for later updates
+        csv_rows_by_app_id[app["id"]] = {
+            "candidate_id": candidate_id,
+            "expected_resumes": len(expected_resumes),
+        }
+
+    progress.log(f"Queued {len(download_queue)} resumes for parallel download\n")
+    progress.log("Downloading with 8 concurrent workers...\n")
+
+    # Parallel download with ThreadPoolExecutor
+    download_results = defaultdict(list)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(download_resume, **task): task["candidate_id"]
+            for task in download_queue
+        }
+
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1
+            result = future.result()
+            candidate_id = result["candidate_id"]
+            download_results[candidate_id].append(result)
+
+            if completed % 10 == 0:
+                pct = int((completed / len(download_queue)) * 100)
+                progress.log(f"  [{pct}%] Downloaded {completed}/{len(download_queue)} resumes...")
+
+    progress.log(f"\n✓ Downloaded {len(download_queue)} resumes\n")
+
+    # Update CSV with final status
+    progress.log("Updating CSV with download results...\n")
+    csv_file.close()
+
+    # Read and update CSV
+    csv_data = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        csv_data = list(reader)
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
+        writer.writeheader()
+
+        for row in csv_data:
+            candidate_id = int(row["candidate_id"])
+            results = download_results.get(candidate_id, [])
+
+            if results:
+                successes = [r for r in results if r["status"] == "success"]
+                if successes:
+                    row["resumes_downloaded"] = "yes"
+                else:
+                    row["resumes_downloaded"] = "failed"
+            elif row["resumes_downloaded"] == "pending":
+                row["resumes_downloaded"] = "failed"
+
+            writer.writerow(row)
+
+    # Write failures CSV
+    if progress.failed_resumes:
+        with open(FAILURES_FILE, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["candidate_id", "attachment_id", "error"])
+            writer.writeheader()
+            writer.writerows(progress.failed_resumes)
+        progress.log(f"✓ Wrote {len(progress.failed_resumes)} failures to {FAILURES_FILE}\n")
+
     # Final department totals
-    progress.log("\n=== DEPARTMENT SUMMARY ===")
+    progress.log("=== DEPARTMENT SUMMARY ===")
     for dept, count in sorted(progress.dept_totals.items()):
         progress.log(f"  {dept}: {count} resumes")
         for role, role_count in sorted(progress.role_totals[dept].items()):
             progress.log(f"    → {role}: {role_count}")
 
-    csv_file.close()
-    progress.log(f"\n✓ Downloaded {resume_count} total resumes")
-    progress.log(f"✓ Wrote {len(applications)} rows to {csv_path}")
-    progress.log(f"✓ Resumes organized in: {RESUME_DIR}")
+    progress.log(f"\n✓ Wrote {len(csv_data)} rows to {csv_path}")
+    progress.log(f"✓ Partial downloads in: {PARTIAL_DIR} (delete after completion)")
+    progress.log(f"✓ Final resumes in: {RESUME_DIR}")
     progress.log(f"✓ Progress log: {LOG_FILE}")
     progress.log(f"\n=== EXPORT COMPLETE ===\n")
     progress.close()
