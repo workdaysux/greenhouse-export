@@ -1,0 +1,45 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Run syntax checks
+        run: |
+          python3 -m py_compile greenhouse_export.py
+          bash -n greenhouse_export.sh
+
+      - name: Build distribution
+        run: |
+          mkdir -p dist
+          zip -q dist/greenhouse_export_${GITHUB_REF_NAME}.zip \
+            greenhouse_export.py \
+            greenhouse_export.sh \
+            .env.template \
+            README.md \
+            QUICK_START.txt \
+            .gitignore \
+            -x ".git/*" "*.pyc" "__pycache__/*" "build/*" "dist/*"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/greenhouse_export_*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
