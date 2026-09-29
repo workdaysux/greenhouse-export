@@ -6,38 +6,76 @@ on:
       - "v*"
 
 jobs:
-  build:
+  build-zip:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.9"
-
       - name: Run syntax checks
         run: |
           python3 -m py_compile greenhouse_export.py
+          python3 -m py_compile launcher.py
           bash -n greenhouse_export.sh
+      - name: Build ZIP
+        run: bash build.sh ${{ github.ref_name }} zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
 
-      - name: Build distribution
-        run: |
-          mkdir -p dist
-          zip -q dist/greenhouse_export_${GITHUB_REF_NAME}.zip \
-            greenhouse_export.py \
-            greenhouse_export.sh \
-            .env.template \
-            README.md \
-            QUICK_START.txt \
-            .gitignore \
-            -x ".git/*" "*.pyc" "__pycache__/*" "build/*" "dist/*"
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+      - name: Build executable
+        run: bash build.sh ${{ github.ref_name }} exe
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
 
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+      - name: Build executable
+        run: bash build.sh ${{ github.ref_name }} exe
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    needs: [build-zip, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/greenhouse_export_*.zip
+          files: dist/*
           draft: false
           prerelease: false
           generate_release_notes: true

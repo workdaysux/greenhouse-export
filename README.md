@@ -6,31 +6,42 @@ One-command export of all candidates, applications, and resumes from your Greenh
 
 ## Quick Start
 
-You have two options:
+You have three options:
 
-### Option 1: Run Locally (macOS / Linux)
+### Option 1: Standalone Executable (Easiest — No Python needed)
+**Download from Releases page:**
+- `greenhouse_export_v1.0.0_macos` (Mac)
+- `greenhouse_export_v1.0.0_linux` (Linux)
+- `greenhouse_export_v1.0.0.exe` (Windows)
+
+**Run:**
+```bash
+./greenhouse_export_v1.0.0_macos    # On Mac/Linux
+greenhouse_export_v1.0.0.exe        # On Windows
+```
+
+### Option 2: Run from ZIP Locally (Requires Python 3.7+)
 ```bash
 bash greenhouse_export.sh
 ```
 
-### Option 2: Run in an IDE / LLM / Code Tool
-1. Download/extract the ZIP
-2. Upload to your tool (Claude Code, VS Code, terminal, etc.)
+### Option 3: Run in IDE / Code Tool (Claude Code, VS Code, etc.)
+1. Download ZIP
+2. Upload to your tool
 3. Run `bash greenhouse_export.sh`
-4. Tool executes it and shows results
 
 ---
 
-**What happens (both options):**
-1. On first run: Interactive wizard asks for 3 Greenhouse credentials (saved, one time only)
-2. Subsequent runs: Uses saved credentials, no prompts
-3. Script automatically:
+**What happens (all options):**
+1. **First run:** Interactive wizard asks for 3 Greenhouse credentials (saved, never ask again)
+2. **Subsequent runs:** Uses saved credentials, instant start
+3. **Export automatically:**
    - Fetches all candidate + application + job data from Greenhouse API
    - Downloads resumes in parallel (8 at a time)
    - Organizes by department → role
-   - Generates CSV with resume status
+   - Generates CSV + failure log
 
-**Time to completion:** 1-2 hours for 1000+ candidates (parallel downloads)
+**Time:** 1-2 hours for 1000+ candidates
 
 ## What's Included
 
@@ -42,18 +53,27 @@ bash greenhouse_export.sh
 
 ## Requirements
 
-**Anywhere (local, IDE, LLM tool, etc.):**
-- Python 3.7+ (most systems have this)
+**Executable (Easiest):**
+- Nothing — just download and run
+- Works on Windows, macOS, Linux
+- No Python, Bash, or dependencies needed
+
+**From ZIP (Requires Python):**
+- Python 3.7+ (most macOS/Linux systems have this)
 - Bash shell (macOS/Linux default)
-- Greenhouse v3 OAuth2 API credentials
+- Windows users: download executable instead
+
+**All options need:**
+- Greenhouse v3 OAuth2 API credentials (enter once, saved forever)
+- Internet connection (to talk to Greenhouse API)
 
 **No external dependencies:**
-- Doesn't require Claude, Claude Code, or any specific tool
-- Works in: terminal, VS Code, IDE, Claude Code, or any environment with Python + Bash
-- Offline capable (except API calls to Greenhouse)
+- No pip packages, no Docker, no special tools needed
+- Fully standalone and self-contained
+- Works offline except when talking to Greenhouse API
 
-**Credentials:**
-Get from your Greenhouse account settings (see below). Enter once, saved for future runs.
+**Where to get credentials:**
+Get from your Greenhouse account settings (Settings → API Credentials). Takes 2 minutes, one-time setup.
 
 ## How It Works
 
