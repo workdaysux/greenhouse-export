@@ -9,11 +9,11 @@ jobs:
   build-zip:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.11"
       - name: Run syntax checks
         run: |
           python3 -m py_compile greenhouse_export.py
@@ -22,45 +22,45 @@ jobs:
       - name: Build ZIP
         run: bash build.sh ${{ github.ref_name }} zip
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ runner.os }}
           path: dist/
 
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.11"
       - name: Install PyInstaller
         run: pip install pyinstaller
       - name: Build executable
         run: bash build.sh ${{ github.ref_name }} exe
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ runner.os }}
           path: dist/
 
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.11"
       - name: Install PyInstaller
         run: pip install pyinstaller
       - name: Build executable
         run: bash build.sh ${{ github.ref_name }} exe
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ runner.os }}
           path: dist/
 
   release:
@@ -68,14 +68,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: dist
           path: dist/
+          pattern: dist-*
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: dist/*/*
           draft: false
           prerelease: false
           generate_release_notes: true
