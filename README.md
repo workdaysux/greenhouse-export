@@ -2,7 +2,7 @@
 
 One-command export of all candidates, applications, and resumes from your Greenhouse ATS.
 
-**No Claude account required.** Runs locally or in Claude Code.
+**Standalone tool.** Runs locally or in any LLM/IDE with Python + Bash support.
 
 ## Quick Start
 
@@ -13,11 +13,11 @@ You have two options:
 bash greenhouse_export.sh
 ```
 
-### Option 2: Run in Claude Code (Easiest for non-technical users)
+### Option 2: Run in an IDE / LLM / Code Tool
 1. Download/extract the ZIP
-2. Upload to Claude Code
-3. Ask Claude: "Run the greenhouse export"
-4. Claude runs it and shows results
+2. Upload to your tool (Claude Code, VS Code, terminal, etc.)
+3. Run `bash greenhouse_export.sh`
+4. Tool executes it and shows results
 
 ---
 
@@ -42,18 +42,18 @@ bash greenhouse_export.sh
 
 ## Requirements
 
-**To run locally:**
-- Python 3.7+ (macOS/Linux have this by default)
-- Bash (included with macOS/Linux)
+**Anywhere (local, IDE, LLM tool, etc.):**
+- Python 3.7+ (most systems have this)
+- Bash shell (macOS/Linux default)
 - Greenhouse v3 OAuth2 API credentials
 
-**To run in Claude Code:**
-- Greenhouse v3 OAuth2 API credentials
-- Internet access
-- That's it — Claude handles the rest
+**No external dependencies:**
+- Doesn't require Claude, Claude Code, or any specific tool
+- Works in: terminal, VS Code, IDE, Claude Code, or any environment with Python + Bash
+- Offline capable (except API calls to Greenhouse)
 
-**Credentials needed:**
-Get from your Greenhouse account settings (see below). You'll enter them once, then never again.
+**Credentials:**
+Get from your Greenhouse account settings (see below). Enter once, saved for future runs.
 
 ## How It Works
 
