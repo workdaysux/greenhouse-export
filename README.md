@@ -1,23 +1,36 @@
 # Greenhouse Export Tool
 
-One-command export of all candidates, applications, and resumes from a Greenhouse ATS instance.
+One-command export of all candidates, applications, and resumes from your Greenhouse ATS.
+
+**No Claude account required.** Runs locally or in Claude Code.
 
 ## Quick Start
 
+You have two options:
+
+### Option 1: Run Locally (macOS / Linux)
 ```bash
 bash greenhouse_export.sh
 ```
 
-**What happens:**
-1. On first run: Interactive wizard asks for 3 Greenhouse credentials (one time only)
-2. Subsequent runs: Uses saved credentials, no prompts needed
+### Option 2: Run in Claude Code (Easiest for non-technical users)
+1. Download/extract the ZIP
+2. Upload to Claude Code
+3. Ask Claude: "Run the greenhouse export"
+4. Claude runs it and shows results
+
+---
+
+**What happens (both options):**
+1. On first run: Interactive wizard asks for 3 Greenhouse credentials (saved, one time only)
+2. Subsequent runs: Uses saved credentials, no prompts
 3. Script automatically:
-   - Fetches all candidate + application + job data from Greenhouse
-   - Downloads resumes in parallel (8 at a time) from S3
+   - Fetches all candidate + application + job data from Greenhouse API
+   - Downloads resumes in parallel (8 at a time)
    - Organizes by department → role
    - Generates CSV with resume status
 
-**Time to completion:** 1-2 hours for 1000+ candidates (with parallel downloads)
+**Time to completion:** 1-2 hours for 1000+ candidates (parallel downloads)
 
 ## What's Included
 
@@ -29,9 +42,18 @@ bash greenhouse_export.sh
 
 ## Requirements
 
-- Python 3.7+
-- Bash
-- Greenhouse v3 OAuth2 API credentials (you'll enter these once)
+**To run locally:**
+- Python 3.7+ (macOS/Linux have this by default)
+- Bash (included with macOS/Linux)
+- Greenhouse v3 OAuth2 API credentials
+
+**To run in Claude Code:**
+- Greenhouse v3 OAuth2 API credentials
+- Internet access
+- That's it — Claude handles the rest
+
+**Credentials needed:**
+Get from your Greenhouse account settings (see below). You'll enter them once, then never again.
 
 ## How It Works
 
